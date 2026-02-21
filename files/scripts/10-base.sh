@@ -8,4 +8,12 @@ set -xeuo pipefail
 # dnf install -y 'dnf-command(config-manager)'
 # dnf config-manager --set-enabled crb
 
-echo "Hello, Atomic AlmaLinux respin world!."
+# Some packages
+dnf install -y firefox chromium
+
+# TZ
+ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
+
+# Autologin
+mkdir -p /etc/systemd/system/graphical.target.wants/
+ln -s /etc/systemd/system/sddm-autologin-setup.service /etc/systemd/system/graphical.target.wants/sddm-autologin-setup.service
