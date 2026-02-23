@@ -34,7 +34,7 @@ jobs:
   build-iso:
     name: Build ISO
     needs: [set-env]
-    uses: catch-404/atomic-ci/.github/workflows/build-iso.yml@v11
+    uses: catch-404/atomic-ci/.github/workflows/build-iso.yml@main
     permissions:
       contents: read
       packages: write
