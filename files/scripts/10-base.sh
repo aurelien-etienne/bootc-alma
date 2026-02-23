@@ -2,14 +2,26 @@
 
 set -xeuo pipefail
 
-# Start customizing your image here
+# Packages
+dnf install -y fapolicyd krdc
+dnf remove -y \
+    cockpit \
+    cockpit-bridge \
+    cockpit-ws \
+    cockpit-ws-selinux \
+    plasma-discover \
+    plasma-discover-libs \
+    flatpak \
+    flatpak-libs \
+    flatpak-selinux \
+    flatpak-session-helper \
+    konsole \
+    konsole-part \
+    krfb
 
-# Examples:
-# dnf install -y 'dnf-command(config-manager)'
-# dnf config-manager --set-enabled crb
-
-# Some packages
-dnf install -y firefox chromium
+# systemd
+systemctl disable system-flatpak-setup.timer
+systemctl --global disable user-flatpak-setup.timer
 
 # TZ
 ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
