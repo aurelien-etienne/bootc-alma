@@ -2,10 +2,30 @@
 
 set -xeuo pipefail
 
-# Start customizing your image here
+# Packages
+dnf install -y fapolicyd krdc
+dnf remove -y \
+    cockpit \
+    cockpit-bridge \
+    cockpit-ws \
+    cockpit-ws-selinux \
+    plasma-discover \
+    plasma-discover-libs \
+    flatpak \
+    flatpak-libs \
+    flatpak-selinux \
+    flatpak-session-helper \
+    konsole \
+    konsole-part \
+    krfb
 
-# Examples:
-# dnf install -y 'dnf-command(config-manager)'
-# dnf config-manager --set-enabled crb
+# systemd
+systemctl disable system-flatpak-setup.timer
+systemctl --global disable user-flatpak-setup.timer
 
-echo "Hello, Atomic AlmaLinux respin world!."
+# TZ
+ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
+
+# Autologin
+mkdir -p /etc/systemd/system/graphical.target.wants/
+ln -s /etc/systemd/system/sddm-autologin-setup.service /etc/systemd/system/graphical.target.wants/sddm-autologin-setup.service
