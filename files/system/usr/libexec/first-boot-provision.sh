@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+setfont sun12x22
+
 cleanup() {
     [[ -f /var/lib/first-boot-provisioned ]] && return
 
@@ -90,6 +92,20 @@ printf '%s' "$recovery_key" \
         --key-file <(printf '%s' "$original_passphrase") \
         "$luks_device"
 
+if [[ -n "${recovery_key:-}" ]]; then
+    echo ""
+    echo "========================================"
+    echo "   RECOVERY KEY - store this safely:"
+    echo "========================================"
+    echo ""
+    echo "$recovery_key"
+    echo ""
+    qrencode -t UTF8 "$recovery_key"
+    echo ""
+    read -r -p "Press Enter to continue..."
+    clear
+fi
+
 echo "Removing original enrollment passphrase..."
 printf '%s' "$original_passphrase" \
     | cryptsetup luksRemoveKey --batch-mode "$luks_device"
@@ -103,13 +119,14 @@ cryptsetup reencrypt \
     "$luks_device"
 echo "Reencryption complete."
 
-
 echo "Adding user password as LUKS keyslot..."
 printf '%s' "$password" \
     | cryptsetup luksAddKey \
         --batch-mode \
         --key-file <(printf '%s' "$recovery_key") \
         "$luks_device"
+
+unset recovery_key
 
 echo "Backing up LUKS header..."
 luks_uuid=$(cryptsetup luksUUID "$luks_device")
@@ -120,21 +137,6 @@ chmod 600 "$header_backup"
 echo "Header backed up to: $header_backup"
 
 unset password password_confirm
-
-if [[ -n "${recovery_key:-}" ]]; then
-    echo ""
-    echo "========================================"
-    echo "   RECOVERY KEY - store this safely:"
-    echo "========================================"
-    echo ""
-    echo "$recovery_key"
-    echo ""
-    qrencode -t UTF8 "$recovery_key"
-    echo ""
-    unset recovery_key
-    read -r -p "Press Enter to continue..."
-    clear
-fi
 
 # --- WireGuard keypair ---
 echo ""
@@ -148,11 +150,6 @@ chmod 700 /etc/wireguard
 private_key=$(wg genkey)
 public_key=$(printf '%s' "$private_key" | wg pubkey)
 
-printf '%s\n' "$private_key" > /etc/wireguard/private.key
-chmod 600 /etc/wireguard/private.key
-chown root:root /etc/wireguard/private.key
-unset private_key
-
 echo "========================================"
 echo "  WIREGUARD PUBLIC KEY - add to server:"
 echo "========================================"
@@ -162,6 +159,11 @@ echo ""
 qrencode -t UTF8 "$public_key"
 echo ""
 unset public_key
+
+printf '%s\n' "$private_key" > /etc/wireguard/private.key
+chmod 600 /etc/wireguard/private.key
+chown root:root /etc/wireguard/private.key
+unset private_key
 
 touch /var/lib/first-boot-provisioned
 

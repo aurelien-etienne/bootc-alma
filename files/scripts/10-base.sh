@@ -32,5 +32,4 @@ systemctl --global disable user-flatpak-setup.timer
 ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
 
 # Autologin
-mkdir -p /etc/systemd/system/graphical.target.wants/
-ln -s /etc/systemd/system/sddm-autologin-setup.service /etc/systemd/system/graphical.target.wants/sddm-autologin-setup.service
+systemctl enable sddm-autologin-setup.service
