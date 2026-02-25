@@ -11,6 +11,10 @@ IMAGE_TYPE ?= iso
 QEMU_DISK_RAW ?= ./output/disk.raw
 QEMU_DISK_QCOW2 ?= ./output/qcow2/disk.qcow2
 QEMU_ISO ?= ./output/bootiso/install.iso
+LIBVIRT_DOMAIN ?= 1-bootc-alma
+LIBVIRT_ROOT ?= /mnt/btrfs_root/kvm
+LIBVIRT_QCOW2 ?= $(LIBVIRT_ROOT)/virt-disks/$(LIBVIRT_DOMAIN).qcow2
+LIBVIRT_ISO ?= $(LIBVIRT_ROOT)/iso/bootc-alma-amd64.iso
 
 .ONESHELL:
 
@@ -99,3 +103,70 @@ run-qemu:
 		-bios /usr/share/OVMF/x64/OVMF.4m.fd \
 		-serial stdio \
 		-hda $(QEMU_DISK_RAW)
+
+vm:
+	cp -f output/bootiso/install.iso $(LIBVIRT_ISO)
+	if virsh dominfo $(LIBVIRT_DOMAIN); then
+		[[ $$(virsh domstate $(LIBVIRT_DOMAIN)) == "running" ]] && virsh destroy $(LIBVIRT_DOMAIN)
+		virsh undefine $(LIBVIRT_DOMAIN) --nvram
+	fi
+	[[ -f $(LIBVIRT_QCOW2) ]] || qemu-img create -f qcow2 $(LIBVIRT_QCOW2) 64G
+	virt-install \
+		--hvm \
+		--noautoconsole \
+		--osinfo almalinux10 \
+		-n $(LIBVIRT_DOMAIN) \
+		--memory 2048 \
+		--vcpus 2 \
+		--cdrom $(LIBVIRT_ISO) \
+		--disk $(LIBVIRT_QCOW2) \
+		--network network=LAN10 \
+		--graphics spice \
+		--wait
+
+vm-tpm:
+	cp -f output/bootiso/install.iso $(LIBVIRT_ISO)
+	if virsh dominfo $(LIBVIRT_DOMAIN); then
+		[[ $$(virsh domstate $(LIBVIRT_DOMAIN)) == "running" ]] && virsh destroy $(LIBVIRT_DOMAIN)
+		virsh undefine $(LIBVIRT_DOMAIN) --nvram
+	fi
+	[[ -f $(LIBVIRT_QCOW2) ]] || qemu-img create -f qcow2 $(LIBVIRT_QCOW2) 64G
+	virt-install \
+		--hvm \
+		--noautoconsole \
+		--osinfo almalinux10 \
+		-n $(LIBVIRT_DOMAIN) \
+		--boot uefi,loader=/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd \
+		--tpm default \
+		--memory 2048 \
+		--vcpus 2 \
+		--cdrom $(LIBVIRT_ISO) \
+		--disk $(LIBVIRT_QCOW2) \
+		--network network=LAN10 \
+		--graphics spice \
+		--wait
+
+vm-tpm-sb:
+	cp -f output/bootiso/install.iso $(LIBVIRT_ISO)
+	if virsh dominfo $(LIBVIRT_DOMAIN); then
+		[[ $$(virsh domstate $(LIBVIRT_DOMAIN)) == "running" ]] && virsh destroy $(LIBVIRT_DOMAIN)
+		virsh undefine $(LIBVIRT_DOMAIN) --nvram
+	fi
+	[[ -f $(LIBVIRT_QCOW2) ]] || qemu-img create -f qcow2 $(LIBVIRT_QCOW2) 64G
+	virt-install \
+		--hvm \
+		--noautoconsole \
+		--osinfo almalinux10 \
+		-n $(LIBVIRT_DOMAIN) \
+		--boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,firmware.feature1.name=enrolled-keys,firmware.feature1.enabled=yes \
+		--tpm default \
+		--memory 2048 \
+		--vcpus 2 \
+		--cdrom $(LIBVIRT_ISO) \
+		--disk $(LIBVIRT_QCOW2) \
+		--network network=LAN10 \
+		--graphics spice \
+		--wait
+
+
+
