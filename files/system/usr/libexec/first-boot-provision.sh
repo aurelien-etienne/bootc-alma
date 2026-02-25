@@ -150,7 +150,6 @@ if systemd-cryptenroll --tpm2-device=list 2>/dev/null | grep -q "/dev/"; then
 
     rm -rf "$cred_dir"
 
-    clear
     echo "TPM2 enrolled!"
     echo "At each boot you will be prompted for the TPM PIN (user password)."
     echo "The recovery key unlocks the disk if the TPM is unavailable."
