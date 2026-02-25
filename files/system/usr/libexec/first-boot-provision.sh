@@ -17,6 +17,8 @@ cleanup() {
         groupdel "$username" 2>/dev/null || true
     fi
 
+    [[ -n "$cred_dir" && -d "$cred_dir" ]] && rm -rf "$cred_dir"
+
     echo "Provisioning will retry on next boot."
 }
 
@@ -69,6 +71,7 @@ if [[ -z "$luks_device" ]]; then
     echo "FATAL: no LUKS device found!"
     echo "This is never expected nor normal. You should reinstall."
     echo "Press Enter to exit"
+    read -r
     exit 1
 fi
 echo "LUKS device: $luks_device"
@@ -81,6 +84,7 @@ if [[ $(echo "$keyslot_salts" | wc -l) -gt 1 ]]; then
     echo "FATAL: there are multiple keys!"
     echo "This is never expected nor normal. You should reinstall."
     echo "Press Enter to exit"
+    read -r
     exit 1
 fi
 original_keyslot_salt="$keyslot_salts" # At that point there should only be one salt in the list
@@ -92,6 +96,7 @@ if ! printf '%s' "$original_passphrase" \
         | cryptsetup open --test-passphrase --batch-mode "$luks_device" 2>/dev/null; then
     echo "Error: incorrect passphrase."
     echo "Press Enter to exit"
+    read -r
     exit 1
 fi
 
@@ -132,12 +137,35 @@ cryptsetup reencrypt \
     "$luks_device"
 echo "Reencryption complete."
 
-echo "Adding user password as LUKS keyslot..."
-printf '%s' "$password" \
-    | cryptsetup luksAddKey \
-        --batch-mode \
-        --key-file <(printf '%s' "$recovery_key") \
+if systemd-cryptenroll --tpm2-device=list 2>/dev/null | grep -q "/dev/"; then
+    echo "TPM2 detected. Enrolling disk unlock via TPM2 + PIN."
+
+    cred_dir=$(mktemp -d)
+    chmod 700 "$cred_dir"
+    printf '%s' "$recovery_key" > "$cred_dir/cryptenroll.passphrase"
+    printf '%s' "$password" > "$cred_dir/cryptenroll.new-tpm2-pin"
+
+    CREDENTIALS_DIRECTORY="$cred_dir" systemd-cryptenroll \
+        --tpm2-device=auto \
+        --tpm2-pcrs=7 \
+        --tpm2-with-pin=yes \
         "$luks_device"
+
+    rm -rf "$cred_dir"
+
+    echo
+    echo "TPM2 enrolled. At each boot you will be prompted for the TPM PIN (user password)."
+    echo "The recovery key unlocks the disk if the TPM is unavailable."
+    echo "Press Enter to continue..."
+    read -r
+else
+    echo "No TPM2 detected. Adding user password as LUKS keyslot..."
+
+    printf '%s' "$password" | cryptsetup luksAddKey \
+        --batch-mode \
+        --key-file=<(printf '%s' "$recovery_key") \
+        "$luks_device"
+fi
 
 unset recovery_key
 
@@ -146,6 +174,7 @@ if [[ "$original_digest" == "$new_digest" ]]; then
     echo "FATAL: volume key digest did not change after reencrypt!"
     echo "This is never expected nor normal. You should reinstall."
     echo "Press Enter to exit"
+    read -r
     exit 1
 fi
 
@@ -154,6 +183,7 @@ if [[ $keyslot_salts == *"$original_keyslot_salt"* ]]; then
     echo "FATAL! The original placeholder passphrase is still present!"
     echo "This is never expected nor normal. You should reinstall."
     echo "Press Enter to exit"
+    read -r
     exit 1
 fi
 
