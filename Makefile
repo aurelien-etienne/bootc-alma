@@ -136,7 +136,7 @@ vm-tpm:
 		--noautoconsole \
 		--osinfo almalinux10 \
 		-n $(LIBVIRT_DOMAIN) \
-		--boot uefi,loader=/usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd \
+		--boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes,firmware.feature1.name=enrolled-keys,firmware.feature1.enabled=no \
 		--tpm default \
 		--memory 2048 \
 		--vcpus 2 \
