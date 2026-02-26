@@ -38,7 +38,14 @@ dnf remove -y \
     PackageKit \
     qt6-qtwebengine \
     ghostscript \
-    libgs
+    libgs \
+    krfb \
+    toolbox \
+    sos \
+    usbmuxd \
+    plasma-welcome \
+    tracker \
+    xwaylandvideobridge
 
 # TZ
 ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
