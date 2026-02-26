@@ -17,46 +17,19 @@ cleanup() {
         groupdel "$username" 2>/dev/null || true
     fi
 
-    [[ -n "$cred_dir" && -d "$cred_dir" ]] && rm -rf "$cred_dir"
+    [[ -n "${cred_dir:-}" && -d "$cred_dir" ]] && rm -rf "$cred_dir"
 
     echo "Provisioning will retry on next boot."
 }
 
 trap cleanup EXIT
 
-clear
-echo "========================================"
-echo "         User Provisioning"
-echo "========================================"
-echo ""
-
-# --- User creation ---
-while true; do
-    read -r -p "Username: " username
-    [[ "$username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && break
-    echo "Invalid username. Lowercase letters, numbers, hyphens and underscores only."
-done
-
-read -r -p "Display name (full name): " display_name
-
-while true; do
-    read -r -s -p "Password: " password
-    echo
-    if [[ ${#password} -lt 8 ]]; then
-        echo "Password must be at least 8 characters."
-        continue
-    fi
-    read -r -s -p "Confirm password: " password_confirm
-    echo
-    [[ "$password" == "$password_confirm" ]] && break
-    echo "Passwords do not match. Try again."
-done
-
-echo "Creating user '$username'..."
-password_hash=$(openssl passwd -6 -- "$password")
+# --- User provisioning ---
+username="user"
+user_display_name="Utilisateur"
+password_hash=$(openssl rand -base64 32 | openssl passwd -6 -stdin) # random password, unused
 groupadd --gid 1000 "$username"
-useradd -m -u 1000 -g 1000 -c "$display_name" -p "$password_hash" "$username"
-echo "Done."
+useradd -m -u 1000 -g 1000 -c "$user_display_name" -p "$password_hash" "$username"
 
 # --- LUKS reencryption ---
 echo ""
@@ -64,6 +37,19 @@ echo "========================================"
 echo "       LUKS Encryption Provisioning"
 echo "========================================"
 echo ""
+
+while true; do
+    read -r -s -p "Passphrase: " passphrase
+    echo
+    if [[ ${#passphrase} -lt 8 ]]; then
+        echo "Passphrase must be at least 8 characters."
+        continue
+    fi
+    read -r -s -p "Confirm passphrase: " passphrase_confirm
+    echo
+    [[ "$passphrase" == "$passphrase_confirm" ]] && break
+    echo "passphrases do not match. Try again."
+done
 
 luks_device=$(blkid -t TYPE=crypto_LUKS -o device 2>/dev/null | head -1 || true)
 
@@ -77,7 +63,6 @@ echo "LUKS device: $luks_device"
 echo ""
 
 luks_dump=$(cryptsetup luksDump --dump-json-metadata "$luks_device")
-original_digest=$(echo "$luks_dump" | jq '.digests[] | .digest')
 keyslot_salts=$(echo "$luks_dump" | jq '.keyslots[] | .kdf.salt')
 if [[ $(echo "$keyslot_salts" | wc -l) -gt 1 ]]; then 
     echo "FATAL: there are multiple keys!"
@@ -125,22 +110,14 @@ printf '%s' "$original_passphrase" \
     | cryptsetup luksRemoveKey --batch-mode "$luks_device"
 unset original_passphrase
 
-echo "Regenerating volume master key. This will take a while..."
-cryptsetup reencrypt \
-    --key-file <(printf '%s' "$recovery_key") \
-    --resilience checksum \
-    --progress-frequency 5 \
-    --verbose \
-    "$luks_device"
-echo "Reencryption complete."
-
+echo
 if systemd-cryptenroll --tpm2-device=list 2>/dev/null | grep -q "/dev/"; then
     echo "TPM2 detected. Enrolling disk unlock via TPM2 + PIN."
 
     cred_dir=$(mktemp -d)
     chmod 700 "$cred_dir"
     printf '%s' "$recovery_key" > "$cred_dir/cryptenroll.passphrase"
-    printf '%s' "$password" > "$cred_dir/cryptenroll.new-tpm2-pin"
+    printf '%s' "$passphrase" > "$cred_dir/cryptenroll.new-tpm2-pin"
 
     CREDENTIALS_DIRECTORY="$cred_dir" systemd-cryptenroll \
         --tpm2-device=auto \
@@ -150,10 +127,11 @@ if systemd-cryptenroll --tpm2-device=list 2>/dev/null | grep -q "/dev/"; then
 
     rm -rf "$cred_dir"
 
-    echo "TPM2 enrolled!"
-    echo "At each boot you will be prompted for the TPM PIN (user password)."
+    echo
+    echo "At each boot you will be prompted for the TPM PIN (passphrase)."
     echo "The recovery key unlocks the disk if the TPM is unavailable."
     read -r -p "Press Enter to continue..."
+    echo
 
     echo
     if mokutil --sb-state 2>/dev/null | grep -iq 'secureboot enabled'; then
@@ -167,9 +145,9 @@ if systemd-cryptenroll --tpm2-device=list 2>/dev/null | grep -q "/dev/"; then
         read -r -p "Press Enter to acknowledge..."
     fi
 else
-    echo "No TPM2 detected. Adding user password as LUKS keyslot..."
+    echo "No TPM2 detected. Adding new passphrase as LUKS keyslot..."
 
-    printf '%s' "$password" | cryptsetup luksAddKey \
+    printf '%s' "$passphrase" | cryptsetup luksAddKey \
         --batch-mode \
         --key-file=<(printf '%s' "$recovery_key") \
         "$luks_device"
@@ -178,14 +156,6 @@ fi
 unset recovery_key
 
 luks_dump=$(cryptsetup luksDump --dump-json-metadata "$luks_device")
-new_digest=$(echo "$luks_dump" | jq '.digests[] | .digest')
-if [[ "$original_digest" == "$new_digest" ]]; then
-    echo "FATAL: volume key digest did not change after reencrypt!"
-    echo "This is never expected nor normal. You should reinstall."
-    read -r -p "Press Enter to exit"
-    exit 1
-fi
-
 keyslot_salts=$(echo "$luks_dump" | jq '.keyslots[] | .kdf.salt')
 if [[ $keyslot_salts == *"$original_keyslot_salt"* ]]; then
     echo "FATAL! The original placeholder passphrase is still present!"
@@ -201,10 +171,14 @@ cryptsetup luksHeaderBackup "$luks_device" \
     --header-backup-file "$header_backup"
 chmod 600 "$header_backup"
 echo "Header backed up to: $header_backup"
+echo "Consider copying it in a separate, secure destination."
 
-unset password password_confirm
+echo
+echo "LUKS setup done."
 
-# --- WireGuard keypair ---
+unset passphrase passphrase_confirm
+
+# --- WireGuard ---
 echo ""
 echo "========================================"
 echo "          WireGuard Provisioning"
