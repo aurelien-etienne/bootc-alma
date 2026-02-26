@@ -1,4 +1,14 @@
 #!/bin/bash
+
+#TODO:
+# never lock, shut down (same on lid closed)
+# Disable all TTYs (doable?) after this script is done
+# fapolicyd
+# firewall default drop
+# Set up wireguard connection (NM, wg-quick, something)
+# restrict NetworkManager (polkit rules?)
+# autostart rdp client, preconfigure it
+
 set -euo pipefail
 
 setfont sun12x22
@@ -31,6 +41,10 @@ password_hash=$(openssl rand -base64 32 | openssl passwd -6 -stdin) # random pas
 groupadd --gid 1000 "$username"
 useradd -m -u 1000 -g 1000 -c "$user_display_name" -p "$password_hash" "$username"
 
+# Autologin
+mkdir -p /etc/sddm.conf.d
+printf "[Autologin]\nUser=%s\nSession=plasma\n" "$username" > /etc/sddm.conf.d/autologin.conf
+
 # --- LUKS reencryption ---
 echo ""
 echo "========================================"
@@ -60,18 +74,19 @@ fi
 original_keyslot_salt="$keyslot_salts" # At that point there should only be one salt in the list
 
 while true; do
-read -r -s -p "Enter current disk enrollment passphrase: " original_passphrase
-echo ""
+    read -r -s -p "Enter current disk enrollment passphrase: " original_passphrase
+    echo ""
     if printf '%s' "$original_passphrase" \
-        | cryptsetup open --test-passphrase --batch-mode "$luks_device" 2>/dev/null; then
+           | cryptsetup open --test-passphrase --batch-mode "$luks_device" 2>/dev/null; then
        echo "Passphrase verified."
        break
     else
-    echo "Error: incorrect passphrase."
+       echo "Error: incorrect passphrase."
     fi
 done
 
 while true; do
+    echo
     read -r -s -p "New passphrase: " passphrase
     echo
     if [[ ${#passphrase} -lt 8 ]]; then
@@ -136,12 +151,12 @@ if systemd-cryptenroll --tpm2-device=list 2>/dev/null | grep -q "/dev/"; then
     if mokutil --sb-state 2>/dev/null | grep -iq 'secureboot enabled'; then
         echo "SecureBoot enabled!"
         echo "Make sure your UEFI firmware is password-protected"
-        read -r -p "Press Enter to acknowledge..."
     else
         echo "WARNING: SecureBoot is disabled (or in setup mode)!"
         echo "You should enable it in UEFI before using this device."
         echo "Additionally, make sure your UEFI firmware is password-protected."
     fi
+    read -r -p "Press Enter to acknowledge..."
 else
     echo "No TPM2 detected. Adding new passphrase as LUKS keyslot..."
 
@@ -161,16 +176,6 @@ if [[ $keyslot_salts == *"$original_keyslot_salt"* ]]; then
     read -r -p "Press Enter to exit"
     exit 1
 fi
-
-echo
-echo "Backing up LUKS header..."
-luks_uuid=$(cryptsetup luksUUID "$luks_device")
-header_backup="/var/lib/luks-header-${luks_uuid}.img"
-cryptsetup luksHeaderBackup "$luks_device" \
-    --header-backup-file "$header_backup"
-chmod 600 "$header_backup"
-echo "Header backed up to: $header_backup"
-echo "Consider copying it in a separate, secure destination."
 
 echo
 echo "LUKS setup done."
