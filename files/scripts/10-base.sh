@@ -30,6 +30,3 @@ systemctl --global disable user-flatpak-setup.timer
 
 # TZ
 ln -sf /usr/share/zoneinfo/Europe/Brussels /etc/localtime
-
-# Autologin
-systemctl enable sddm-autologin-setup.service
